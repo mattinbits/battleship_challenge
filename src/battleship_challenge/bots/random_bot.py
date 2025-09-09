@@ -17,6 +17,11 @@ class RandomBot(BattleshipBot):
         super().__init__(player_id, board_size, ships)
         self.shots_taken: Set[Tuple[int, int]] = set()
     
+    @property
+    def name(self) -> str:
+        """Return the display name for this bot."""
+        return "RandomBot"
+    
     def place_ships(self) -> List[Tuple[Tuple[int, int], Tuple[int, int]]]:
         """Place ships randomly on the board."""
         placed_ships = []

@@ -43,6 +43,16 @@ class BattleshipBot(ABC):
         self.board_size = board_size
         self.ships = ships
     
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Return the display name for this bot.
+        
+        Returns:
+            Human-readable name for the bot
+        """
+        pass
+    
     @abstractmethod
     def place_ships(self) -> List[Tuple[Tuple[int, int], Tuple[int, int]]]:
         """Place ships on the board.

@@ -5,9 +5,9 @@ This module contains the game engine that manages matches between bots.
 """
 
 import time
-import os
 from typing import List, Tuple, Set
 from .interface import BattleshipBot, ShotResult, ShotResponse
+from .visualization import BattleshipVisualizer
 
 
 class BattleshipGame:
@@ -37,6 +37,14 @@ class BattleshipGame:
         self._bot2_hits = set()
         self._bot1_shots_taken = []
         self._bot2_shots_taken = []
+        self._visualizer = BattleshipVisualizer(board_size) if visualize else None
+        
+        # Create display names with collision handling
+        self.bot1_display_name = bot1.name
+        self.bot2_display_name = bot2.name
+        if self.bot1_display_name == self.bot2_display_name:
+            self.bot1_display_name += " (1)"
+            self.bot2_display_name += " (2)"
     
     def play_game(self) -> str:
         """Play a complete game between the two bots.
@@ -52,8 +60,9 @@ class BattleshipGame:
         self._validate_ship_placement(self._bot1_ships, self.bot1.player_id)
         self._validate_ship_placement(self._bot2_ships, self.bot2.player_id)
         
-        # Show initial board state
+        # Initialize display and show initial board state
         if self.visualize:
+            self._visualizer.init_display()
             self._display_game_state("Game Start")
             time.sleep(1.0)
         
@@ -73,7 +82,8 @@ class BattleshipGame:
             
             # Display the move
             if self.visualize:
-                self._display_game_state(current_bot.player_id, shot, result)
+                current_display_name = self.bot1_display_name if current_bot == self.bot1 else self.bot2_display_name
+                self._display_game_state(current_display_name, shot, result)
                 time.sleep(0.5)
             
             # Send result back to shooting bot
@@ -82,7 +92,9 @@ class BattleshipGame:
             # Check for game over
             if self._is_game_over(current_hits, current_ships):
                 if self.visualize:
-                    print(f"\n🎉 Game Over! Winner: {current_bot.player_id} 🎉")
+                    winner_display_name = self.bot1_display_name if current_bot == self.bot1 else self.bot2_display_name
+                    self._visualizer.display_winner(winner_display_name)
+                    self._visualizer.cleanup_display()
                     time.sleep(2.0)
                 return current_bot.player_id
             
@@ -175,84 +187,16 @@ class BattleshipGame:
         
         return all_ship_squares.issubset(hits)
     
-    def _clear_screen(self):
-        """Clear the console screen."""
-        os.system('cls' if os.name == 'nt' else 'clear')
-    
-    def _display_board(self, player_name: str, ships: List[Tuple[Tuple[int, int], Tuple[int, int]]], 
-                      hits: Set[Tuple[int, int]], shots_taken: List[Tuple[int, int]], 
-                      show_ships: bool = True):
-        """Display a player's board state.
-        
-        Args:
-            player_name: Name of the player
-            ships: List of ship positions
-            hits: Set of positions that have been hit
-            shots_taken: List of all shots taken at this board
-            show_ships: Whether to show ship positions (for debugging/spectator view)
-        """
-        print(f"\n{player_name}'s Board:")
-        
-        # Get all ship squares
-        ship_squares = set()
-        if show_ships:
-            for ship_start, ship_end in ships:
-                ship_squares.update(self._get_ship_squares(ship_start, ship_end))
-        
-        # Create header with column numbers
-        print("   ", end="")
-        for x in range(self.board_size[0]):
-            print(f"{x:2}", end="")
-        print()
-        
-        # Display each row
-        for y in range(self.board_size[1]):
-            print(f"{y:2} ", end="")
-            for x in range(self.board_size[0]):
-                pos = (x, y)
-                if pos in hits:
-                    if pos in ship_squares:
-                        print(" X", end="")  # Hit ship
-                    else:
-                        print(" M", end="")  # Miss (shouldn't happen with proper game logic)
-                elif pos in shots_taken:
-                    print(" M", end="")  # Miss
-                elif show_ships and pos in ship_squares:
-                    print(" S", end="")  # Ship
-                else:
-                    print(" .", end="")  # Water
-            print()
-    
     def _display_game_state(self, current_player: str, last_shot: Tuple[int, int] = None, 
                            last_result: ShotResponse = None):
         """Display the current game state with both boards."""
         if not self.visualize:
             return
             
-        self._clear_screen()
-        print("=" * 60)
-        print("BATTLESHIP GAME")
-        print("=" * 60)
-        
-        if last_shot and last_result:
-            result_text = last_result.result.value.upper()
-            if last_result.result == ShotResult.SUNK:
-                result_text += f" (Ship length: {last_result.sunk_ship_length})"
-            print(f"\n{current_player} shot at {last_shot}: {result_text}")
-        
-        print("\nLegend: . = Water, S = Ship, X = Hit, M = Miss")
-        
-        # Display both boards side by side
-        print("\n" + "=" * 30 + " vs " + "=" * 30)
-        
-        # Bot1's board (what Bot2 is shooting at)
-        self._display_board(self.bot1.player_id, self._bot1_ships, self._bot2_hits, 
-                           self._bot2_shots_taken, show_ships=True)
-        
-        print()
-        
-        # Bot2's board (what Bot1 is shooting at)  
-        self._display_board(self.bot2.player_id, self._bot2_ships, self._bot1_hits,
-                           self._bot1_shots_taken, show_ships=True)
-        
-        print("\n" + "=" * 60)
+        self._visualizer.display_game_state(
+            self.bot1_display_name, self.bot2_display_name,
+            self._bot1_ships, self._bot2_ships,
+            self._bot1_hits, self._bot2_hits,
+            self._bot1_shots_taken, self._bot2_shots_taken,
+            current_player, last_shot, last_result
+        )
