@@ -25,13 +25,13 @@ Your bot will compete against other teams' bots in head-to-head matches. The bot
 
 2. **Create and activate a virtual environment:**
    ```bash
-   python -m venv env
+   python3 -m venv env  # Use 'python' if 'python3' is not available
    source env/bin/activate  # On Windows: env\Scripts\activate
    ```
 
 3. **Install the project in editable mode:**
    ```bash
-   pip install -e .[test]
+   pip install -e ".[test]"
    ```
 
 4. **Test the installation:**
