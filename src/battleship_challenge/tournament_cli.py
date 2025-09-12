@@ -95,6 +95,12 @@ Examples:
   # Verbose output with fewer games per matchup
   python -m battleship_challenge.tournament_cli RandomBot SmartBot --games-per-matchup 5 --verbose
 
+  # Visual tournament with progress bars and live leaderboard
+  python -m battleship_challenge.tournament_cli RandomBot SmartBot --visualize
+
+  # Fast-paced visual tournament with shorter delays
+  python -m battleship_challenge.tournament_cli RandomBot RandomBot RandomBot --visualize --delay 0.3
+
 Configuration file format (one per line):
   name:board_size:ships
   Standard:10x10:5,4,3,3,2
@@ -114,6 +120,10 @@ Configuration file format (one per line):
                        help="Number of games each pair plays per configuration (default: 10)")
     parser.add_argument("--verbose", "-v", action="store_true",
                        help="Verbose output showing individual game results")
+    parser.add_argument("--visualize", action="store_true",
+                       help="Enable visual effects, progress bars, and live leaderboard")
+    parser.add_argument("--delay", type=float, default=1.0,
+                       help="Delay in seconds between visual updates for suspense (default: 1.0)")
     
     args = parser.parse_args()
     
@@ -143,6 +153,11 @@ Configuration file format (one per line):
         print("Error: --games-per-matchup must be at least 1")
         sys.exit(1)
     
+    # Validate delay
+    if args.delay < 0:
+        print("Error: --delay must be non-negative")
+        sys.exit(1)
+    
     # Print tournament setup
     print("BATTLESHIP TOURNAMENT")
     print("=" * 50)
@@ -154,7 +169,8 @@ Configuration file format (one per line):
     
     try:
         # Create and run tournament
-        tournament = Tournament(args.bots, configs, args.games_per_matchup)
+        tournament = Tournament(args.bots, configs, args.games_per_matchup, 
+                              visualize=args.visualize, delay=args.delay)
         results = tournament.run_tournament(verbose=args.verbose)
         
         # Display results
