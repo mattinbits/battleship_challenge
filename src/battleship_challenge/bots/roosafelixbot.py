@@ -12,6 +12,8 @@ class RoosaFelixBot(BattleshipBot):
         
         # Hunt Strategy Parameters
         self.HUNT_PARITY = 0  # 0 or 1 for checkerboard pattern (try both!)
+        self.ADAPTIVE_PARITY = True  # Switch parity if current pattern isn't working
+        self.PARITY_SWITCH_THRESHOLD = 15  # Switch after this many misses in hunt mode
         self.USE_PROBABILITY_DENSITY = True  # Weight shots by ship probability
         self.MIN_SHIP_SIZE_FILTER = True  # Only target areas fitting remaining ships
         
@@ -19,8 +21,13 @@ class RoosaFelixBot(BattleshipBot):
         self.EDGE_BIAS = 0.5  # 0.0=center bias, 1.0=edge bias (try 0.3, 0.7)
         self.SPACING_BUFFER = 0  # Minimum squares between ships (try 1, 2)
         self.ORIENTATION_BIAS = 0.5  # 0.0=horizontal bias, 1.0=vertical bias
+        self.ANTI_PATTERN_PLACEMENT = True  # Place ships to avoid common targeting patterns
+        self.RANDOMIZE_LARGE_SHIPS = True  # Extra randomization for ships size 4+
         
-        # Target Strategy Parameters
+        # Advanced Hunt Parameters
+        self.USE_HEAT_MAP = True  # Use probability heat map for shot selection
+        self.HEAT_MAP_DECAY = 0.8  # How much heat decreases with distance from ships
+        self.CLUSTER_BONUS = 1.5  # Bonus for areas near multiple possible ship placements
         self.DIRECTION_PRIORITY = "smart"  # "sequential", "random", "smart"
         self.TARGET_QUEUE_STRATEGY = "depth_first"  # "breadth_first", "depth_first"
         self.AGGRESSIVE_TARGETING = True  # Prioritize completing ships over hunting new ones
@@ -35,6 +42,11 @@ class RoosaFelixBot(BattleshipBot):
         self.hits = set()
         self.misses = set()
         self.sunk_ships = []
+        
+        # Adaptive behavior tracking
+        self.hunt_misses_since_hit = 0
+        self.parity_switched = False
+        self.original_parity = self.HUNT_PARITY
         
         # Hunt/Target mode variables
         self.target_queue = deque()  # Adjacent squares to try after a hit
@@ -69,17 +81,27 @@ class RoosaFelixBot(BattleshipBot):
         """Get current parameter settings for analysis."""
         return {
             'HUNT_PARITY': self.HUNT_PARITY,
+            'ADAPTIVE_PARITY': self.ADAPTIVE_PARITY,
+            'PARITY_SWITCH_THRESHOLD': self.PARITY_SWITCH_THRESHOLD,
             'USE_PROBABILITY_DENSITY': self.USE_PROBABILITY_DENSITY,
             'MIN_SHIP_SIZE_FILTER': self.MIN_SHIP_SIZE_FILTER,
+            'USE_HEAT_MAP': self.USE_HEAT_MAP,
+            'HEAT_MAP_DECAY': self.HEAT_MAP_DECAY,
+            'CLUSTER_BONUS': self.CLUSTER_BONUS,
             'EDGE_BIAS': self.EDGE_BIAS,
             'SPACING_BUFFER': self.SPACING_BUFFER,
             'ORIENTATION_BIAS': self.ORIENTATION_BIAS,
+            'ANTI_PATTERN_PLACEMENT': self.ANTI_PATTERN_PLACEMENT,
+            'RANDOMIZE_LARGE_SHIPS': self.RANDOMIZE_LARGE_SHIPS,
             'DIRECTION_PRIORITY': self.DIRECTION_PRIORITY,
             'TARGET_QUEUE_STRATEGY': self.TARGET_QUEUE_STRATEGY,
             'AGGRESSIVE_TARGETING': self.AGGRESSIVE_TARGETING,
             'MAX_TARGET_ATTEMPTS': self.MAX_TARGET_ATTEMPTS,
             'SMART_DIRECTION_BIAS': self.SMART_DIRECTION_BIAS,
             'PERSIST_ON_LINE': self.PERSIST_ON_LINE,
+            # Runtime stats
+            'parity_switched': self.parity_switched,
+            'hunt_misses_since_hit': self.hunt_misses_since_hit,
         }
     
     def place_ships(self) -> List[Tuple[Tuple[int, int], Tuple[int, int]]]:
@@ -330,9 +352,57 @@ class RoosaFelixBot(BattleshipBot):
         return horizontal_fit or vertical_fit
     
     def _weighted_shot_selection(self, candidates: List[Tuple[int, int]]) -> Tuple[int, int]:
-        """Select shot based on probability density (placeholder for advanced logic)."""
-        # For now, just return random - could implement heat map logic here
-        return random.choice(candidates)
+        """Select shot based on probability density using heat map."""
+        if not self.USE_HEAT_MAP:
+            return random.choice(candidates)
+        
+        # Calculate heat map scores for each candidate
+        scored_candidates = []
+        for x, y in candidates:
+            score = self._calculate_position_score(x, y)
+            scored_candidates.append((score, x, y))
+        
+        # Sort by score (highest first) and add some randomness
+        scored_candidates.sort(reverse=True)
+        
+        # Pick from top 25% with some randomness
+        top_candidates = scored_candidates[:max(1, len(scored_candidates) // 4)]
+        _, x, y = random.choice(top_candidates)
+        return (x, y)
+    
+    def _calculate_position_score(self, x: int, y: int) -> float:
+        """Calculate probability score for a position based on remaining ships."""
+        score = 1.0
+        width, height = self.board_size
+        
+        # Bonus for positions that could fit multiple remaining ships
+        for ship_length in self.remaining_ships:
+            # Check horizontal fit
+            if x + ship_length <= width:
+                horizontal_clear = True
+                for i in range(ship_length):
+                    if (x + i, y) in self.shots_taken:
+                        horizontal_clear = False
+                        break
+                if horizontal_clear:
+                    score += 0.5
+            
+            # Check vertical fit
+            if y + ship_length <= height:
+                vertical_clear = True
+                for i in range(ship_length):
+                    if (x, y + i) in self.shots_taken:
+                        vertical_clear = False
+                        break
+                if vertical_clear:
+                    score += 0.5
+        
+        # Cluster bonus - bonus for positions near center and away from edges
+        center_x, center_y = width // 2, height // 2
+        distance_from_center = abs(x - center_x) + abs(y - center_y)
+        score += (width + height - distance_from_center) * 0.1
+        
+        return score
     
     def _is_valid_shot(self, x: int, y: int) -> bool:
         """Check if a shot is valid (in bounds and not already taken)."""
@@ -348,6 +418,9 @@ class RoosaFelixBot(BattleshipBot):
             self.hits.add(shot)
             self.current_ship_hits.append(shot)
             
+            # Reset hunt miss counter on hit
+            self.hunt_misses_since_hit = 0
+            
             # Switch to target mode
             self.mode = "target"
             
@@ -361,6 +434,18 @@ class RoosaFelixBot(BattleshipBot):
         
         elif result.result == ShotResult.MISS:
             self.misses.add(shot)
+            
+            # Track hunt mode misses for adaptive parity
+            if self.mode == "hunt":
+                self.hunt_misses_since_hit += 1
+                
+                # Switch parity if we're missing too much in hunt mode
+                if (self.ADAPTIVE_PARITY and 
+                    not self.parity_switched and 
+                    self.hunt_misses_since_hit >= self.PARITY_SWITCH_THRESHOLD):
+                    self.HUNT_PARITY = 1 - self.HUNT_PARITY
+                    self.parity_switched = True
+                    self.hunt_misses_since_hit = 0  # Reset counter
         
         elif result.result == ShotResult.SUNK:
             self.hits.add(shot)
