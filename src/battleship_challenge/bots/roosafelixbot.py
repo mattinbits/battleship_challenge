@@ -23,6 +23,10 @@ class RoosaFelixBot(BattleshipBot):
         # Target Strategy Parameters
         self.DIRECTION_PRIORITY = "smart"  # "sequential", "random", "smart"
         self.TARGET_QUEUE_STRATEGY = "depth_first"  # "breadth_first", "depth_first"
+        self.AGGRESSIVE_TARGETING = True  # Prioritize completing ships over hunting new ones
+        self.MAX_TARGET_ATTEMPTS = 8  # Max shots to try around a hit before giving up
+        self.SMART_DIRECTION_BIAS = True  # Bias toward center/open areas when targeting
+        self.PERSIST_ON_LINE = True  # Keep shooting in same direction after multiple hits
         
         # ===== END TUNABLE PARAMETERS =====
         
@@ -72,6 +76,10 @@ class RoosaFelixBot(BattleshipBot):
             'ORIENTATION_BIAS': self.ORIENTATION_BIAS,
             'DIRECTION_PRIORITY': self.DIRECTION_PRIORITY,
             'TARGET_QUEUE_STRATEGY': self.TARGET_QUEUE_STRATEGY,
+            'AGGRESSIVE_TARGETING': self.AGGRESSIVE_TARGETING,
+            'MAX_TARGET_ATTEMPTS': self.MAX_TARGET_ATTEMPTS,
+            'SMART_DIRECTION_BIAS': self.SMART_DIRECTION_BIAS,
+            'PERSIST_ON_LINE': self.PERSIST_ON_LINE,
         }
     
     def place_ships(self) -> List[Tuple[Tuple[int, int], Tuple[int, int]]]:
@@ -168,19 +176,24 @@ class RoosaFelixBot(BattleshipBot):
     
     def _target_mode_shot(self) -> Tuple[int, int]:
         """Target mode: systematically check around known hits."""
-        while self.target_queue:
-            x, y = self.target_queue.popleft()
+        
+        # If we have multiple hits and persistence is enabled, try line continuation first
+        if len(self.current_ship_hits) >= 2 and self.PERSIST_ON_LINE:
+            oriented_shot = self._oriented_shot()
+            if oriented_shot:
+                return oriented_shot
+        
+        # Use target queue with proper strategy
+        if self.target_queue:
+            if self.TARGET_QUEUE_STRATEGY == "depth_first":
+                x, y = self.target_queue.pop()  # Take from end (last added)
+            else:  # breadth_first
+                x, y = self.target_queue.popleft()  # Take from front (first added)
             
-            # If we have multiple hits, determine ship orientation
-            if len(self.current_ship_hits) >= 2:
-                return self._oriented_shot()
-            
-            # Add adjacent squares with configurable direction priority
-            directions = self._get_prioritized_directions()
-            for dx, dy in directions:
-                adj_x, adj_y = x + dx, y + dy
-                if self._is_valid_shot(adj_x, adj_y):
-                    return (adj_x, adj_y)
+            if self._is_valid_shot(x, y):
+                return (x, y)
+            # If shot invalid, try next in queue
+            return self._target_mode_shot()
         
         # No more targets, switch back to hunt mode
         self.mode = "hunt"
@@ -203,40 +216,63 @@ class RoosaFelixBot(BattleshipBot):
         else:  # "sequential"
             return base_directions
     
-    def _oriented_shot(self) -> Tuple[int, int]:
-        """Target along the determined ship orientation."""
+    def _oriented_shot(self) -> Optional[Tuple[int, int]]:
+        """Target along the determined ship orientation with improved logic."""
         if len(self.current_ship_hits) < 2:
-            return self._target_mode_shot()
+            return None
         
         # Determine ship orientation
         sorted_hits = sorted(self.current_ship_hits)
-        x1, y1 = sorted_hits[0]
-        x2, y2 = sorted_hits[1]
         
-        # Check if ship is horizontal or vertical
-        if x1 == x2:  # Vertical ship
-            # Try ends of the ship
+        # Check if all hits are in a line (horizontal or vertical)
+        is_horizontal = all(hit[1] == sorted_hits[0][1] for hit in self.current_ship_hits)
+        is_vertical = all(hit[0] == sorted_hits[0][0] for hit in self.current_ship_hits)
+        
+        if not (is_horizontal or is_vertical):
+            # Hits not in a line - fall back to target queue
+            return None
+            
+        candidates = []
+        
+        if is_vertical:  # Vertical ship
+            x = sorted_hits[0][0]
             min_y = min(hit[1] for hit in self.current_ship_hits)
             max_y = max(hit[1] for hit in self.current_ship_hits)
             
-            # Try shooting above and below
-            candidates = [(x1, min_y - 1), (x1, max_y + 1)]
-        else:  # Horizontal ship
-            # Try ends of the ship
+            # Prioritize extending the line
+            candidates = [(x, min_y - 1), (x, max_y + 1)]
+            
+        elif is_horizontal:  # Horizontal ship
+            y = sorted_hits[0][1]
             min_x = min(hit[0] for hit in self.current_ship_hits)
             max_x = max(hit[0] for hit in self.current_ship_hits)
             
-            # Try shooting left and right
-            candidates = [(min_x - 1, y1), (max_x + 1, y1)]
+            # Prioritize extending the line
+            candidates = [(min_x - 1, y), (max_x + 1, y)]
+        
+        # Apply smart direction bias if enabled
+        if self.SMART_DIRECTION_BIAS:
+            candidates = self._bias_toward_open_area(candidates)
         
         # Return first valid candidate
         for x, y in candidates:
             if self._is_valid_shot(x, y):
                 return (x, y)
         
-        # Fallback to regular target mode
-        return self._target_mode_shot()
-    
+        return None
+
+    def _bias_toward_open_area(self, candidates: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+        """Bias candidate shots toward more open areas of the board."""
+        width, height = self.board_size
+        center_x, center_y = width // 2, height // 2
+        
+        # Sort by distance from center (closer to center = more open area typically)
+        def distance_from_center(pos):
+            x, y = pos
+            return abs(x - center_x) + abs(y - center_y)
+        
+        return sorted(candidates, key=distance_from_center)
+
     def _hunt_mode_shot(self) -> Tuple[int, int]:
         """Hunt mode: use configurable pattern with probability."""
         width, height = self.board_size
@@ -315,13 +351,13 @@ class RoosaFelixBot(BattleshipBot):
             # Switch to target mode
             self.mode = "target"
             
-            # Add adjacent squares to target queue if we don't have orientation yet
-            if len(self.current_ship_hits) == 1:
-                x, y = shot
-                for dx, dy in self.directions:
-                    adj_x, adj_y = x + dx, y + dy
-                    if self._is_valid_shot(adj_x, adj_y):
-                        self.target_queue.append((adj_x, adj_y))
+            # Add adjacent squares to target queue strategically
+            if self.AGGRESSIVE_TARGETING:
+                self._add_strategic_targets(shot)
+            else:
+                # Original simple logic
+                if len(self.current_ship_hits) == 1:
+                    self._add_adjacent_targets(shot)
         
         elif result.result == ShotResult.MISS:
             self.misses.add(shot)
@@ -340,3 +376,32 @@ class RoosaFelixBot(BattleshipBot):
             self.current_ship_hits = []
             self.target_queue.clear()
             self.mode = "hunt"
+
+    def _add_strategic_targets(self, shot: Tuple[int, int]):
+        """Add targets around a hit using strategic prioritization."""
+        x, y = shot
+        
+        # If this is our first hit on this ship, add all adjacent squares
+        if len(self.current_ship_hits) == 1:
+            self._add_adjacent_targets(shot)
+        elif len(self.current_ship_hits) >= 2:
+            # We have orientation info - prioritize line extension
+            oriented_shot = self._oriented_shot()
+            if oriented_shot and oriented_shot not in [pos for pos in self.target_queue]:
+                # Add oriented shot to front of queue for immediate attention
+                if self.TARGET_QUEUE_STRATEGY == "depth_first":
+                    self.target_queue.append(oriented_shot)
+                else:
+                    self.target_queue.appendleft(oriented_shot)
+    
+    def _add_adjacent_targets(self, shot: Tuple[int, int]):
+        """Add adjacent squares to target queue with direction priority."""
+        x, y = shot
+        directions = self._get_prioritized_directions()
+        
+        for dx, dy in directions:
+            adj_x, adj_y = x + dx, y + dy
+            if self._is_valid_shot(adj_x, adj_y):
+                # Avoid duplicates
+                if (adj_x, adj_y) not in self.target_queue:
+                    self.target_queue.append((adj_x, adj_y))
