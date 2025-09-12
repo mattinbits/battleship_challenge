@@ -9,7 +9,7 @@ class RoosaFelixBot(BattleshipBot):
         super().__init__(player_id, board_size, ships)
         
         # ===== TUNABLE PARAMETERS FOR EXPERIMENTATION =====
-        
+    
         # Hunt Strategy Parameters
         self.HUNT_PARITY = 0  # 0 or 1 for checkerboard pattern (try both!)
         self.ADAPTIVE_PARITY = True  # Switch parity if current pattern isn't working
