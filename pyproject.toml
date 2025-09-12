@@ -19,6 +19,7 @@ test = ["pytest>=6.0"]
 
 [project.scripts]
 battleship_challenge = "battleship_challenge.main:main"
+battleship_tournament = "battleship_challenge.tournament_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

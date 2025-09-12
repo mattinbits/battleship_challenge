@@ -52,13 +52,31 @@ class BattleshipGame:
         Returns:
             The player_id of the winning bot
         """
-        # Get ship placements from both bots
-        self._bot1_ships = self.bot1.place_ships()
-        self._bot2_ships = self.bot2.place_ships()
+        # Get ship placements from both bots with error handling
+        try:
+            self._bot1_ships = self.bot1.place_ships()
+        except Exception as e:
+            print(f"Bot {self.bot1.player_id} failed during ship placement: {e}")
+            return self.bot2.player_id
+            
+        try:
+            self._bot2_ships = self.bot2.place_ships()
+        except Exception as e:
+            print(f"Bot {self.bot2.player_id} failed during ship placement: {e}")
+            return self.bot1.player_id
         
         # Validate ship placements
-        self._validate_ship_placement(self._bot1_ships, self.bot1.player_id)
-        self._validate_ship_placement(self._bot2_ships, self.bot2.player_id)
+        try:
+            self._validate_ship_placement(self._bot1_ships, self.bot1.player_id)
+        except (ValueError, TypeError) as e:
+            print(f"Bot {self.bot1.player_id} made illegal ship placement: {e}")
+            return self.bot2.player_id
+            
+        try:
+            self._validate_ship_placement(self._bot2_ships, self.bot2.player_id)
+        except (ValueError, TypeError) as e:
+            print(f"Bot {self.bot2.player_id} made illegal ship placement: {e}")
+            return self.bot1.player_id
         
         # Initialize display and show initial board state
         if self.visualize:
@@ -73,8 +91,28 @@ class BattleshipGame:
         current_shots = self._bot1_shots_taken
         
         while True:
-            # Take shot
-            shot = current_bot.take_shot()
+            # Take shot with error handling
+            try:
+                shot = current_bot.take_shot()
+            except Exception as e:
+                print(f"Bot {current_bot.player_id} failed during shot selection: {e}")
+                # Current bot loses, return the other bot's id
+                if current_bot == self.bot1:
+                    return self.bot2.player_id
+                else:
+                    return self.bot1.player_id
+            
+            # Validate shot coordinates
+            try:
+                self._validate_shot(shot)
+            except (ValueError, TypeError) as e:
+                print(f"Bot {current_bot.player_id} made illegal shot {shot}: {e}")
+                # Current bot loses, return the other bot's id
+                if current_bot == self.bot1:
+                    return self.bot2.player_id
+                else:
+                    return self.bot1.player_id
+                    
             current_shots.append(shot)
             
             # Calculate result
@@ -86,8 +124,16 @@ class BattleshipGame:
                 self._display_game_state(current_display_name, shot, result)
                 time.sleep(0.5)
             
-            # Send result back to shooting bot
-            current_bot.receive_shot_result(shot, result)
+            # Send result back to shooting bot with error handling
+            try:
+                current_bot.receive_shot_result(shot, result)
+            except Exception as e:
+                print(f"Bot {current_bot.player_id} failed during result processing: {e}")
+                # Current bot loses, return the other bot's id
+                if current_bot == self.bot1:
+                    return self.bot2.player_id
+                else:
+                    return self.bot1.player_id
             
             # Check for game over
             if self._is_game_over(current_hits, current_ships):
@@ -109,6 +155,22 @@ class BattleshipGame:
                 current_ships = self._bot2_ships
                 current_hits = self._bot1_hits
                 current_shots = self._bot1_shots_taken
+    
+    def _validate_shot(self, shot: Tuple[int, int]):
+        """Validate that a shot is legal."""
+        if not isinstance(shot, tuple) or len(shot) != 2:
+            raise ValueError("Shot must be a tuple of two integers")
+        
+        x, y = shot
+        
+        if not isinstance(x, int) or not isinstance(y, int):
+            raise ValueError("Shot coordinates must be integers")
+            
+        if not (0 <= x < self.board_size[0]):
+            raise ValueError(f"Shot x-coordinate {x} is out of bounds (0-{self.board_size[0]-1})")
+            
+        if not (0 <= y < self.board_size[1]):
+            raise ValueError(f"Shot y-coordinate {y} is out of bounds (0-{self.board_size[1]-1})")
     
     def _validate_ship_placement(self, ships: List[Tuple[Tuple[int, int], Tuple[int, int]]], player_id: str):
         """Validate that ship placements are legal."""
