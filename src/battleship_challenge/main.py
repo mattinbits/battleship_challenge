@@ -7,6 +7,7 @@ This script orchestrates games between competing bots.
 import argparse
 import importlib
 import inspect
+import pkgutil
 import sys
 from typing import Type, Tuple
 from .interface import BattleshipBot
@@ -26,12 +27,20 @@ def discover_bot_class(bot_name: str) -> Type[BattleshipBot]:
         ImportError: If the bot cannot be found or imported
         ValueError: If the imported class is not a valid BattleshipBot
     """
-    # First try to import from the built-in bots module
+    # First try to import from the built-in bots modules
     try:
-        from .bots import random_bot
-        modules_to_search = [random_bot]
+        from . import bots
+        modules_to_search = []
         
-        # Look for the bot class in built-in modules
+        # Dynamically discover all modules in the bots package
+        for _, modname, _ in pkgutil.iter_modules(bots.__path__, bots.__name__ + "."):
+            try:
+                module = importlib.import_module(modname)
+                modules_to_search.append(module)
+            except ImportError:
+                continue
+        
+        # Look for the bot class in all discovered modules
         for module in modules_to_search:
             for name, obj in inspect.getmembers(module, inspect.isclass):
                 if name == bot_name and issubclass(obj, BattleshipBot) and obj != BattleshipBot:
