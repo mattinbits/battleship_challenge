@@ -7,7 +7,7 @@ name = "battleship_challenge"
 version = "0.1.0"
 description = "A battleship game challenge implementation"
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "Matthew Livesey", email = "matt@mjlivesey.co.uk"}
 ]
 readme = "README.md"
 license = {text = "MIT"}
@@ -20,6 +20,7 @@ test = ["pytest>=6.0"]
 [project.scripts]
 battleship_challenge = "battleship_challenge.main:main"
 battleship_tournament = "battleship_challenge.tournament_cli:main"
+battleship_validate = "battleship_challenge.bot_validator:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -205,12 +205,6 @@ class Tournament:
         # Display winner
         winner_color = Colors.GREEN + Colors.BOLD
         print(f"\n{winner_color}🏆 Game {game_num} Winner: {winner_id} 🏆{Colors.RESET}")
-        
-        # Always show live leaderboard during matches
-        self._display_live_leaderboard(0, 0, show_progress=False)  # Just leaderboard, no progress bar
-        
-        # Brief pause to view the result
-        time.sleep(self.delay)
     
     def _display_matchup_tally(self, bot1_id: str, bot2_id: str, bot1_wins: int, bot2_wins: int, config: GameConfig):
         """Display running tally for current matchup."""
@@ -310,47 +304,44 @@ class Tournament:
                 print(f"\nPlaying configuration: {config.name}")
                 print(f"Board: {config.board_size[0]}x{config.board_size[1]}, Ships: {config.ships}")
             
-            for bot1_id, bot2_id in itertools.combinations(self.bot_identifiers, 2):
-                if self.visualize:
-                    self._display_match_header(config, bot1_id, bot2_id)
-                elif verbose:
-                    print(f"  {bot1_id} vs {bot2_id}:")
-                
-                # Track wins within this matchup
-                matchup_wins = {bot1_id: 0, bot2_id: 0}
-                
-                # Play the specified number of games, alternating who goes first
-                for game_num in range(self.games_per_matchup):
+            pairs = list(itertools.combinations(self.bot_identifiers, 2))
+            matchup_wins = {(b1, b2): {b1: 0, b2: 0} for b1, b2 in pairs}
+
+            for game_num in range(self.games_per_matchup):
+                for bot1_id, bot2_id in pairs:
                     game_count += 1
-                    
+
+                    if self.visualize:
+                        self._display_match_header(config, bot1_id, bot2_id)
+
                     # Alternate who goes first by swapping bot order every other game
                     if game_num % 2 == 0:
                         first_bot_id, second_bot_id = bot1_id, bot2_id
                     else:
                         first_bot_id, second_bot_id = bot2_id, bot1_id
-                    
+
                     # Create fresh bot instances for this game
                     first_bot_class = self.bot_classes[first_bot_id]
                     second_bot_class = self.bot_classes[second_bot_id]
                     first_bot, second_bot = create_bot_instances(
-                        first_bot_class, second_bot_class, 
+                        first_bot_class, second_bot_class,
                         config.board_size, config.ships
                     )
-                    
+
                     # Play the game
                     game = BattleshipGame(
-                        first_bot, second_bot, 
-                        config.board_size, config.ships, 
+                        first_bot, second_bot,
+                        config.board_size, config.ships,
                         visualize=False
                     )
                     winner_id = game.play_game()
-                    
+
                     # Map winner back to bot identifier
                     winner_bot_id = self._get_original_bot_id(winner_id, first_bot_id, second_bot_id)
-                    
+
                     # Update matchup wins
-                    matchup_wins[winner_bot_id] += 1
-                    
+                    matchup_wins[(bot1_id, bot2_id)][winner_bot_id] += 1
+
                     # Record the result
                     result = MatchResult(
                         bot1_id=bot1_id,
@@ -360,28 +351,24 @@ class Tournament:
                         game_number=game_num + 1
                     )
                     self.match_results.append(result)
-                    
+
                     # Update current scores
                     self.current_scores[winner_bot_id] += 1
-                    
+
                     # Display results
                     if self.visualize:
-                        # Show the game board result
                         self._display_game_with_boards(game_num + 1, bot1_id, bot2_id, game, winner_bot_id, config)
-                        # Show matchup progress
-                        self._display_matchup_tally(bot1_id, bot2_id, matchup_wins[bot1_id], matchup_wins[bot2_id], config)
-                        time.sleep(self.delay / 2)
+                        self._display_matchup_tally(bot1_id, bot2_id,
+                                                    matchup_wins[(bot1_id, bot2_id)][bot1_id],
+                                                    matchup_wins[(bot1_id, bot2_id)][bot2_id], config)
+                        self._display_live_leaderboard(game_count, total_games)
+                        time.sleep(self.delay)
                     elif verbose:
-                        print(f"    Game {game_num + 1}: {winner_bot_id} wins")
-                    
+                        print(f"    {bot1_id} vs {bot2_id} - Game {game_num + 1}: {winner_bot_id} wins")
+
                     # Progress indicator for non-visual mode
                     if not verbose and not self.visualize and game_count % 10 == 0:
                         print(f"  Progress: {game_count}/{total_games} games completed")
-                
-                # Show updated leaderboard after each matchup in visual mode
-                if self.visualize:
-                    self._display_live_leaderboard(game_count, total_games)
-                    time.sleep(self.delay)
         
         if self.visualize:
             self._clear_screen()

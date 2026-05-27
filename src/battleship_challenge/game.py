@@ -104,7 +104,7 @@ class BattleshipGame:
             
             # Validate shot coordinates
             try:
-                self._validate_shot(shot)
+                self._validate_shot(shot, current_shots)
             except (ValueError, TypeError) as e:
                 print(f"Bot {current_bot.player_id} made illegal shot {shot}: {e}")
                 # Current bot loses, return the other bot's id
@@ -156,59 +156,65 @@ class BattleshipGame:
                 current_hits = self._bot1_hits
                 current_shots = self._bot1_shots_taken
     
-    def _validate_shot(self, shot: Tuple[int, int]):
+    def _validate_shot(self, shot: Tuple[int, int], shots_taken: list = None):
         """Validate that a shot is legal."""
         if not isinstance(shot, tuple) or len(shot) != 2:
             raise ValueError("Shot must be a tuple of two integers")
-        
+
         x, y = shot
-        
+
         if not isinstance(x, int) or not isinstance(y, int):
             raise ValueError("Shot coordinates must be integers")
-            
+
         if not (0 <= x < self.board_size[0]):
             raise ValueError(f"Shot x-coordinate {x} is out of bounds (0-{self.board_size[0]-1})")
-            
+
         if not (0 <= y < self.board_size[1]):
             raise ValueError(f"Shot y-coordinate {y} is out of bounds (0-{self.board_size[1]-1})")
+
+        if shots_taken is not None and shot in shots_taken:
+            raise ValueError(f"Shot at {shot} has already been fired")
     
     def _validate_ship_placement(self, ships: List[Tuple[Tuple[int, int], Tuple[int, int]]], player_id: str):
         """Validate that ship placements are legal."""
         if len(ships) != len(self.ships):
             raise ValueError(f"Player {player_id} must place exactly {len(self.ships)} ships")
-        
+
         occupied_squares = set()
-        
+        ship_lengths = []
+
         for i, ((start_x, start_y), (end_x, end_y)) in enumerate(ships):
             # Check bounds
             if not (0 <= start_x < self.board_size[0] and 0 <= start_y < self.board_size[1]):
                 raise ValueError(f"Player {player_id} ship {i} start position out of bounds")
             if not (0 <= end_x < self.board_size[0] and 0 <= end_y < self.board_size[1]):
                 raise ValueError(f"Player {player_id} ship {i} end position out of bounds")
-            
+
             # Check ship is horizontal or vertical
             if start_x != end_x and start_y != end_y:
                 raise ValueError(f"Player {player_id} ship {i} must be horizontal or vertical")
-            
-            # Calculate ship length and squares
-            ship_squares = []
+
+            # Calculate ship squares
             if start_x == end_x:  # Vertical ship
                 min_y, max_y = min(start_y, end_y), max(start_y, end_y)
                 ship_squares = [(start_x, y) for y in range(min_y, max_y + 1)]
             else:  # Horizontal ship
                 min_x, max_x = min(start_x, end_x), max(start_x, end_x)
                 ship_squares = [(x, start_y) for x in range(min_x, max_x + 1)]
-            
-            # Check ship length
-            expected_length = self.ships[i]
-            if len(ship_squares) != expected_length:
-                raise ValueError(f"Player {player_id} ship {i} has length {len(ship_squares)}, expected {expected_length}")
-            
+
+            ship_lengths.append(len(ship_squares))
+
             # Check for overlaps
             for square in ship_squares:
                 if square in occupied_squares:
                     raise ValueError(f"Player {player_id} ships overlap at {square}")
                 occupied_squares.add(square)
+
+        # Validate ship lengths as a multiset (order-independent)
+        if sorted(ship_lengths) != sorted(self.ships):
+            raise ValueError(
+                f"Player {player_id} ship lengths {sorted(ship_lengths)} do not match required {sorted(self.ships)}"
+            )
     
     def _calculate_shot_result(self, shot: Tuple[int, int], target_ships: List[Tuple[Tuple[int, int], Tuple[int, int]]], hits: Set[Tuple[int, int]]) -> ShotResponse:
         """Calculate the result of a shot."""

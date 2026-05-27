@@ -41,12 +41,22 @@ def discover_bot_class(bot_name: str) -> Type[BattleshipBot]:
                 continue
         
         # Look for the bot class in all discovered modules
+        matches = []
         for module in modules_to_search:
             for name, obj in inspect.getmembers(module, inspect.isclass):
                 if name == bot_name and issubclass(obj, BattleshipBot) and obj != BattleshipBot:
-                    return obj
+                    matches.append((module.__name__, obj))
     except ImportError:
         pass
+    else:
+        if len(matches) > 1:
+            candidates = ", ".join(f"{mod}.{cls.__name__}" for mod, cls in matches)
+            raise ImportError(
+                f"Multiple bot classes named '{bot_name}' found: {candidates}. "
+                f"Use fully-qualified 'module.ClassName' form to disambiguate."
+            )
+        if len(matches) == 1:
+            return matches[0][1]
     
     # Try to import from external module
     try:
