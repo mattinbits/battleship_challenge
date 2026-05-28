@@ -5,9 +5,9 @@ A competitive coding challenge where teams build AI bots to play Battleship agai
 ## 🎯 Challenge Overview
 
 In this challenge, you'll implement a bot that can:
-1. **Place ships strategically** on a game board
-2. **Hunt and target** the opponent's ships efficiently  
-3. **Make smart decisions** based on shot results
+1. **Place ships** on a game board
+2. **Hunt** the opponent's ships  
+3. **Make decisions** based on shot results
 
 Your bot will compete against other teams' bots in head-to-head matches. The bot that consistently wins more games will be crowned the champion!
 
@@ -92,12 +92,7 @@ def place_ships(self):
 ```
 
 #### `take_shot()` → Tuple[int, int]
-Choose where to shoot. Return `(x, y)` coordinates.
-
-**Tips:**
-- Keep track of shots you've already taken
-- Use probability-based targeting
-- Implement hunt/target mode (random search → systematic adjacent shots)
+Choose where to shoot. Return `(x, y)` coordinates. Firing at a square you've already shot is an illegal move and forfeits the game.
 
 #### `receive_shot_result(shot, result)`
 Process the result of your shot to update your strategy.
@@ -118,25 +113,6 @@ battleship_challenge MyAwesomeBot RandomBot --board-size 8x8 --ships 4,3,2
 # Run multiple games quickly (no visualization)
 battleship_challenge MyAwesomeBot RandomBot
 ```
-
-## 🧠 Strategy Tips
-
-### Ship Placement Strategies
-- **Random placement** - Simple but unpredictable
-- **Edge placement** - Harder to find, fewer adjacent squares  
-- **Clustering** - Confuse opponent after they find one ship
-- **Anti-parity** - Counter checkerboard search patterns
-
-### Hunting Strategies
-- **Random search** - Basic but ineffective
-- **Parity/Checkerboard** - Only shoot squares where the largest ship could fit
-- **Probability density** - Calculate likelihood for each square based on remaining ships
-- **Hunt/Target mode** - Switch between random search and systematic adjacent shots after hits
-
-### Advanced Techniques
-- **Opponent modeling** - Learn from their placement patterns
-- **Ship length tracking** - Remember which ships you've sunk
-- **Probability maps** - Maintain heat maps of likely ship locations
 
 ## 🎮 Running Games
 
@@ -246,15 +222,11 @@ A: Fix the bug! The game engine will report errors. Use `--verbose` mode to debu
 A: No! This is hidden information. You only know the results of your own shots.
 
 **Q: How do I make my bot faster?**
-A: Avoid expensive operations in `take_shot()`. Pre-compute probability maps when possible.
+A: Avoid expensive operations in `take_shot()` — it's called once per turn.
 
 ## 🏅 Good Luck!
 
-Remember: the best bot isn't necessarily the most complex one. Focus on:
-1. **Solid basics** - Don't shoot the same square twice
-2. **Smart placement** - Make your ships hard to find
-3. **Efficient hunting** - Minimize shots needed to find ships
-4. **Quick targeting** - Once you hit, sink quickly
+Remember: shooting the same square twice is an illegal move and will forfeit the game — make sure your bot tracks its shots!
 
 May your algorithms be swift and your aim be true! 🎯
 
